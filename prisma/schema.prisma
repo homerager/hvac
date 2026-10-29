@@ -1,0 +1,636 @@
+// Servora HVAC — single-tenant data model.
+//
+// Conventions:
+// - Money is stored as Int cents (USD). Field names end with `Cents`.
+// - Rates are stored as Int basis points (1% = 100 bps).
+// - Balances are derived from CONFIRMED payments only; never cached on the invoice.
+// - Idempotency is enforced by unique constraints:
+//   Request.idempotencyKey, Job.requestId, Invoice.jobId, Payment.stripePaymentIntentId,
+//   StripeEvent.id, WorkEntry.clientId.
+// - Finalized invoices are immutable: corrections are appended as InvoiceAdjustment rows.
+// - CHECK constraints that Prisma cannot express live in the migration SQL
+//   (e.g. a CHECK payment must reference a photo).
+
+generator client {
+  provider     = "prisma-client"
+  output       = "../server/generated/prisma"
+  runtime      = "nodejs"
+  moduleFormat = "esm"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ───────────────────────────── Enums ─────────────────────────────
+
+enum Role {
+  SUPER_ADMIN
+  OWNER
+  DISPATCHER
+  TECHNICIAN
+}
+
+enum CustomerType {
+  COMMERCIAL
+  RESIDENTIAL
+}
+
+enum RequestSource {
+  MANUAL
+  API
+}
+
+enum RequestStatus {
+  OPEN
+  CONVERTED
+  DUPLICATE
+  REJECTED
+}
+
+enum JobStatus {
+  NEW
+  SCHEDULED
+  IN_PROGRESS
+  COMPLETED
+  INVOICED
+  PAID
+  CANCELLED
+  NO_SHOW
+}
+
+enum JobPriority {
+  LOW
+  NORMAL
+  HIGH
+  EMERGENCY
+}
+
+enum VisitOutcome {
+  COMPLETED
+  FOLLOW_UP_NEEDED
+  FAILED
+  NO_SHOW
+}
+
+enum ChargeType {
+  LABOR
+  PART
+  SERVICE_CALL
+  OTHER
+}
+
+enum AttachmentKind {
+  PHOTO
+  NAMEPLATE
+  CHECK_PHOTO
+  DOCUMENT
+}
+
+enum InvoiceStatus {
+  DRAFT
+  PENDING_APPROVAL
+  FINALIZED
+  VOID
+}
+
+enum InvoiceAdjustmentKind {
+  DISCOUNT
+  CREDIT
+  CORRECTION
+  WRITE_OFF
+}
+
+enum PaymentMethod {
+  STRIPE
+  CASH
+  CHECK
+  VENMO
+  ZELLE
+}
+
+enum PaymentStatus {
+  PENDING
+  CONFIRMED
+  FAILED
+  DISPUTED
+  REFUNDED
+  VOIDED
+}
+
+enum DeliveryStatus {
+  QUEUED
+  SENT
+  DELIVERED
+  FAILED
+}
+
+// ───────────────────────────── People ─────────────────────────────
+
+model User {
+  id           String    @id @default(uuid(7)) @db.Uuid
+  email        String    @unique
+  name         String
+  phone        String?
+  role         Role
+  passwordHash String?
+  isActive     Boolean   @default(true)
+  lastLoginAt  DateTime? @db.Timestamptz(3)
+  createdAt    DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt    DateTime  @updatedAt @db.Timestamptz(3)
+
+  assignedJobs       Job[]               @relation("JobAssignee")
+  sharedJobs         Job[]               @relation("JobCollaborators")
+  createdJobs        Job[]               @relation("JobCreatedBy")
+  waivedJobs         Job[]               @relation("JobServiceCallWaivedBy")
+  createdRequests    Request[]           @relation("RequestCreatedBy")
+  workEntries        WorkEntry[]         @relation("WorkEntryAuthor")
+  participatedIn     WorkEntry[]         @relation("WorkEntryParticipants")
+  attachments        Attachment[]
+  approvedInvoices   Invoice[]           @relation("InvoiceApprovedBy")
+  finalizedInvoices  Invoice[]           @relation("InvoiceFinalizedBy")
+  voidedInvoices     Invoice[]           @relation("InvoiceVoidedBy")
+  invoiceAdjustments InvoiceAdjustment[]
+  recordedPayments   Payment[]           @relation("PaymentRecordedBy")
+  confirmedPayments  Payment[]           @relation("PaymentConfirmedBy")
+  voidedPayments     Payment[]           @relation("PaymentVoidedBy")
+  auditLogs          AuditLog[]
+  updatedSettings    Setting[]
+}
+
+// ─────────────────────── Customers & sites ───────────────────────
+
+model Customer {
+  id    String       @id @default(uuid(7)) @db.Uuid
+  name  String
+  type  CustomerType
+  notes String?
+
+  /// Contract customers may be exempt from the service-call charge (BR-07).
+  isContract Boolean @default(false)
+
+  /// Default recipient of invoices; a property may override it.
+  billingContactId String?  @unique @db.Uuid
+  billingContact   Contact? @relation("CustomerBillingContact", fields: [billingContactId], references: [id], onDelete: SetNull)
+
+  archivedAt DateTime? @db.Timestamptz(3)
+  createdAt  DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt  DateTime  @updatedAt @db.Timestamptz(3)
+
+  contacts   Contact[]  @relation("CustomerContacts")
+  properties Property[]
+  requests   Request[]
+  jobs       Job[]
+  invoices   Invoice[]
+
+  @@index([name])
+}
+
+model Contact {
+  id         String   @id @default(uuid(7)) @db.Uuid
+  customerId String   @db.Uuid
+  customer   Customer @relation("CustomerContacts", fields: [customerId], references: [id], onDelete: Cascade)
+  name       String
+  title      String?
+  email      String?
+  phone      String?
+  notes      String?
+  createdAt  DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt  DateTime @updatedAt @db.Timestamptz(3)
+
+  billingForCustomer   Customer?  @relation("CustomerBillingContact")
+  billingForProperties Property[] @relation("PropertyBillingContact")
+  siteForProperties    Property[] @relation("PropertySiteContact")
+
+  @@index([customerId])
+  @@index([email])
+  @@index([phone])
+}
+
+model Property {
+  id              String   @id @default(uuid(7)) @db.Uuid
+  customerId      String   @db.Uuid
+  customer        Customer @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  name            String?
+  addressLine1    String
+  addressLine2    String?
+  city            String
+  /// Two-letter state code (NY / NJ). Drives the tax context of invoices (BR-02, BR-09).
+  state           String   @db.Char(2)
+  postalCode      String
+  /// Local tax jurisdiction (county / city) once the accountant confirms the rules.
+  taxJurisdiction String?
+  taxExempt       Boolean  @default(false)
+  accessNotes     String?
+
+  siteContactId    String?  @db.Uuid
+  siteContact      Contact? @relation("PropertySiteContact", fields: [siteContactId], references: [id], onDelete: SetNull)
+  /// Overrides Customer.billingContact for work at this property.
+  billingContactId String?  @db.Uuid
+  billingContact   Contact? @relation("PropertyBillingContact", fields: [billingContactId], references: [id], onDelete: SetNull)
+
+  archivedAt DateTime? @db.Timestamptz(3)
+  createdAt  DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt  DateTime  @updatedAt @db.Timestamptz(3)
+
+  equipment Equipment[]
+  requests  Request[]
+  jobs      Job[]
+  invoices  Invoice[]
+
+  @@index([customerId])
+  @@index([postalCode])
+}
+
+model Equipment {
+  id           String    @id @default(uuid(7)) @db.Uuid
+  propertyId   String    @db.Uuid
+  property     Property  @relation(fields: [propertyId], references: [id], onDelete: Restrict)
+  /// Free-form type (RTU, split system, boiler, furnace, ...).
+  type         String
+  manufacturer String?
+  model        String?
+  serialNumber String?
+  location     String?
+  installedOn  DateTime? @db.Date
+  notes        String?
+  archivedAt   DateTime? @db.Timestamptz(3)
+  createdAt    DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt    DateTime  @updatedAt @db.Timestamptz(3)
+
+  /// Service history: jobs that touched this unit.
+  jobs        Job[]
+  attachments Attachment[]
+
+  @@index([propertyId])
+  @@index([serialNumber])
+}
+
+// ─────────────────────── Intake & scheduling ───────────────────────
+
+model Request {
+  id     String        @id @default(uuid(7)) @db.Uuid
+  source RequestSource
+  status RequestStatus @default(OPEN)
+
+  /// Client-supplied key (header or payload) — a retried submission maps to the same row (BR-01).
+  idempotencyKey String? @unique
+  /// Normalized hash of contact + address + description for soft duplicate detection.
+  fingerprint    String?
+  /// Original API payload, kept verbatim for mapping audits.
+  rawPayload     Json?
+
+  contactName     String
+  contactPhone    String?
+  contactEmail    String?
+  address         String?
+  description     String
+  preferredWindow String?
+
+  customerId String?   @db.Uuid
+  customer   Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  propertyId String?   @db.Uuid
+  property   Property? @relation(fields: [propertyId], references: [id], onDelete: SetNull)
+
+  duplicateOfId String?   @db.Uuid
+  duplicateOf   Request?  @relation("RequestDuplicates", fields: [duplicateOfId], references: [id], onDelete: SetNull)
+  duplicates    Request[] @relation("RequestDuplicates")
+
+  createdById String?  @db.Uuid
+  createdBy   User?    @relation("RequestCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime @updatedAt @db.Timestamptz(3)
+
+  job Job?
+
+  @@index([status, createdAt])
+  @@index([fingerprint])
+}
+
+model Job {
+  id          String      @id @default(uuid(7)) @db.Uuid
+  /// Human-readable job number shown in the UI.
+  number      Int         @unique @default(autoincrement())
+  status      JobStatus   @default(NEW)
+  priority    JobPriority @default(NORMAL)
+  title       String
+  description String?
+
+  /// One job per request: converting the same request twice fails on this key.
+  requestId String?  @unique @db.Uuid
+  request   Request? @relation(fields: [requestId], references: [id], onDelete: SetNull)
+
+  customerId String   @db.Uuid
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  propertyId String   @db.Uuid
+  property   Property @relation(fields: [propertyId], references: [id], onDelete: Restrict)
+
+  /// Arrival window set by the dispatcher (BR-04).
+  scheduledStart DateTime? @db.Timestamptz(3)
+  scheduledEnd   DateTime? @db.Timestamptz(3)
+
+  assignedToId  String? @db.Uuid
+  assignedTo    User?   @relation("JobAssignee", fields: [assignedToId], references: [id], onDelete: SetNull)
+  /// Technicians the job is explicitly shared with (BR-15).
+  collaborators User[]  @relation("JobCollaborators")
+
+  equipment Equipment[]
+
+  serviceCallWaived      Boolean @default(false)
+  serviceCallWaivedById  String? @db.Uuid
+  serviceCallWaivedBy    User?   @relation("JobServiceCallWaivedBy", fields: [serviceCallWaivedById], references: [id], onDelete: SetNull)
+  serviceCallWaiveReason String?
+
+  startedAt    DateTime? @db.Timestamptz(3)
+  completedAt  DateTime? @db.Timestamptz(3)
+  cancelledAt  DateTime? @db.Timestamptz(3)
+  cancelReason String?
+
+  createdById String?  @db.Uuid
+  createdBy   User?    @relation("JobCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime @updatedAt @db.Timestamptz(3)
+
+  workEntries WorkEntry[]
+  attachments Attachment[]
+  invoice     Invoice?
+
+  @@index([status])
+  @@index([assignedToId, scheduledStart])
+  @@index([scheduledStart])
+  @@index([customerId])
+  @@index([propertyId])
+}
+
+// ─────────────────────────── Field work ───────────────────────────
+
+/// One visit to the site (BR-06). A job may have several visits (e.g. a failed one, then a completed one).
+model WorkEntry {
+  id    String @id @default(uuid(7)) @db.Uuid
+  jobId String @db.Uuid
+  job   Job    @relation(fields: [jobId], references: [id], onDelete: Restrict)
+
+  /// Generated by the PWA before the first save; a retried save after a dropped connection is a no-op.
+  clientId String? @unique
+
+  authorId     String @db.Uuid
+  author       User   @relation("WorkEntryAuthor", fields: [authorId], references: [id], onDelete: Restrict)
+  participants User[] @relation("WorkEntryParticipants")
+
+  arrivedAt     DateTime?     @db.Timestamptz(3)
+  departedAt    DateTime?     @db.Timestamptz(3)
+  outcome       VisitOutcome?
+  workPerformed String?
+  notes         String?
+  /// Required by the service when outcome is FAILED or NO_SHOW.
+  outcomeReason String?
+
+  /// Set once the visit is closed; later edits must go through a corrections flow with an audit reason.
+  closedAt  DateTime? @db.Timestamptz(3)
+  createdAt DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @db.Timestamptz(3)
+
+  lines       WorkEntryLine[]
+  attachments Attachment[]
+
+  @@index([jobId])
+  @@index([authorId, arrivedAt])
+}
+
+/// Labor / parts proposed by the technician (BR-08). Prices here are proposals; the invoice holds the approved values.
+model WorkEntryLine {
+  id             String     @id @default(uuid(7)) @db.Uuid
+  workEntryId    String     @db.Uuid
+  workEntry      WorkEntry  @relation(fields: [workEntryId], references: [id], onDelete: Cascade)
+  type           ChargeType
+  description    String
+  quantity       Decimal    @db.Decimal(10, 2)
+  unitPriceCents Int?
+  partNumber     String?
+  createdAt      DateTime   @default(now()) @db.Timestamptz(3)
+  updatedAt      DateTime   @updatedAt @db.Timestamptz(3)
+
+  invoiceLines InvoiceLine[]
+
+  @@index([workEntryId])
+}
+
+/// Private file in S3-compatible storage; served through signed URLs only.
+model Attachment {
+  id          String         @id @default(uuid(7)) @db.Uuid
+  kind        AttachmentKind
+  storageKey  String         @unique
+  fileName    String
+  contentType String
+  sizeBytes   Int
+  caption     String?
+
+  uploadedById String @db.Uuid
+  uploadedBy   User   @relation(fields: [uploadedById], references: [id], onDelete: Restrict)
+
+  jobId       String?    @db.Uuid
+  job         Job?       @relation(fields: [jobId], references: [id], onDelete: Restrict)
+  workEntryId String?    @db.Uuid
+  workEntry   WorkEntry? @relation(fields: [workEntryId], references: [id], onDelete: Restrict)
+  equipmentId String?    @db.Uuid
+  equipment   Equipment? @relation(fields: [equipmentId], references: [id], onDelete: Restrict)
+
+  /// Check photo backing a manual CHECK payment.
+  payment Payment?
+
+  /// Retention policy for sensitive files (check photos) purges the object and sets this.
+  deletedAt DateTime? @db.Timestamptz(3)
+  createdAt DateTime  @default(now()) @db.Timestamptz(3)
+
+  @@index([jobId])
+  @@index([workEntryId])
+  @@index([equipmentId])
+  @@index([kind, createdAt])
+}
+
+// ──────────────────────── Invoices & payments ────────────────────────
+
+model Invoice {
+  id     String        @id @default(uuid(7)) @db.Uuid
+  /// Assigned at finalization; format is a client decision (open item #4).
+  number String?       @unique
+  status InvoiceStatus @default(DRAFT)
+
+  /// Exactly one invoice per job: re-finalizing never creates a second invoice (BR-09).
+  jobId      String   @unique @db.Uuid
+  job        Job      @relation(fields: [jobId], references: [id], onDelete: Restrict)
+  customerId String   @db.Uuid
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  propertyId String   @db.Uuid
+  property   Property @relation(fields: [propertyId], references: [id], onDelete: Restrict)
+
+  /// Bill-to snapshot taken at finalization so later contact edits don't rewrite history.
+  billToName    String?
+  billToEmail   String?
+  billToPhone   String?
+  billToAddress String?
+
+  /// Tax context snapshot from the property.
+  taxState        String? @db.Char(2)
+  taxJurisdiction String?
+  taxRateBps      Int     @default(0)
+
+  subtotalCents Int @default(0)
+  discountCents Int @default(0)
+  taxableCents  Int @default(0)
+  taxCents      Int @default(0)
+  /// Original total at finalization. Amount due = totalCents + sum(adjustments) - confirmed payments.
+  totalCents    Int @default(0)
+
+  notes    String?
+  issuedAt DateTime? @db.Timestamptz(3)
+  dueDate  DateTime? @db.Date
+
+  approvedById  String?   @db.Uuid
+  approvedBy    User?     @relation("InvoiceApprovedBy", fields: [approvedById], references: [id], onDelete: SetNull)
+  approvedAt    DateTime? @db.Timestamptz(3)
+  finalizedById String?   @db.Uuid
+  finalizedBy   User?     @relation("InvoiceFinalizedBy", fields: [finalizedById], references: [id], onDelete: SetNull)
+  finalizedAt   DateTime? @db.Timestamptz(3)
+  voidedById    String?   @db.Uuid
+  voidedBy      User?     @relation("InvoiceVoidedBy", fields: [voidedById], references: [id], onDelete: SetNull)
+  voidedAt      DateTime? @db.Timestamptz(3)
+  voidReason    String?
+
+  /// Delivery tracking for the invoice e-mail (BR-13).
+  deliveryStatus    DeliveryStatus?
+  deliveryError     String?
+  sentAt            DateTime?       @db.Timestamptz(3)
+  providerMessageId String?
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  lines       InvoiceLine[]
+  adjustments InvoiceAdjustment[]
+  payments    Payment[]
+
+  @@index([status, dueDate])
+  @@index([customerId])
+}
+
+model InvoiceLine {
+  id             String     @id @default(uuid(7)) @db.Uuid
+  invoiceId      String     @db.Uuid
+  invoice        Invoice    @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  position       Int
+  type           ChargeType
+  description    String
+  quantity       Decimal    @db.Decimal(10, 2)
+  unitPriceCents Int
+  discountCents  Int        @default(0)
+  /// round(quantity * unitPriceCents) - discountCents, computed by the invoice service.
+  amountCents    Int
+  taxable        Boolean    @default(true)
+
+  sourceWorkEntryLineId String?        @db.Uuid
+  sourceWorkEntryLine   WorkEntryLine? @relation(fields: [sourceWorkEntryLineId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  @@unique([invoiceId, position])
+}
+
+/// Append-only change to a finalized invoice's amount due. Negative amounts reduce what the customer owes.
+model InvoiceAdjustment {
+  id          String                @id @default(uuid(7)) @db.Uuid
+  invoiceId   String                @db.Uuid
+  invoice     Invoice               @relation(fields: [invoiceId], references: [id], onDelete: Restrict)
+  kind        InvoiceAdjustmentKind
+  amountCents Int
+  reason      String
+  createdById String                @db.Uuid
+  createdBy   User                  @relation(fields: [createdById], references: [id], onDelete: Restrict)
+  createdAt   DateTime              @default(now()) @db.Timestamptz(3)
+
+  @@index([invoiceId])
+}
+
+/// A single attempt or record of money against an invoice. Only CONFIRMED rows reduce the balance (BR-11).
+model Payment {
+  id        String        @id @default(uuid(7)) @db.Uuid
+  invoiceId String        @db.Uuid
+  invoice   Invoice       @relation(fields: [invoiceId], references: [id], onDelete: Restrict)
+  method    PaymentMethod
+  status    PaymentStatus @default(PENDING)
+
+  amountCents   Int
+  /// Portion of a confirmed payment returned to the customer.
+  refundedCents Int      @default(0)
+  receivedOn    DateTime @db.Date
+  /// Check number, Venmo/Zelle transaction id, etc.
+  reference     String?
+  notes         String?
+
+  /// Required for CHECK payments (enforced by a CHECK constraint in the migration).
+  checkPhotoId String?     @unique @db.Uuid
+  checkPhoto   Attachment? @relation(fields: [checkPhotoId], references: [id], onDelete: Restrict)
+
+  /// Webhook retries resolve to the same row (BR-12).
+  stripePaymentIntentId String? @unique
+  stripeChargeId        String?
+  failureReason         String?
+
+  recordedById  String?   @db.Uuid
+  recordedBy    User?     @relation("PaymentRecordedBy", fields: [recordedById], references: [id], onDelete: SetNull)
+  confirmedById String?   @db.Uuid
+  confirmedBy   User?     @relation("PaymentConfirmedBy", fields: [confirmedById], references: [id], onDelete: SetNull)
+  confirmedAt   DateTime? @db.Timestamptz(3)
+  voidedById    String?   @db.Uuid
+  voidedBy      User?     @relation("PaymentVoidedBy", fields: [voidedById], references: [id], onDelete: SetNull)
+  voidedAt      DateTime? @db.Timestamptz(3)
+  voidReason    String?
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  @@index([invoiceId, status])
+  @@index([status, createdAt])
+}
+
+/// Processed Stripe webhook events; the event id is the dedupe key.
+model StripeEvent {
+  id          String    @id
+  type        String
+  payload     Json
+  processedAt DateTime? @db.Timestamptz(3)
+  error       String?
+  receivedAt  DateTime  @default(now()) @db.Timestamptz(3)
+}
+
+// ──────────────────────── Audit & settings ────────────────────────
+
+/// Append-only log of sensitive changes: prices, invoices, payments, roles, record corrections (BR-15).
+model AuditLog {
+  id         String   @id @default(uuid(7)) @db.Uuid
+  actorId    String?  @db.Uuid
+  actor      User?    @relation(fields: [actorId], references: [id], onDelete: SetNull)
+  /// Dotted action name, e.g. `invoice.finalize`, `payment.confirm`, `work_entry.correct`.
+  action     String
+  entityType String
+  entityId   String
+  before     Json?
+  after      Json?
+  reason     String?
+  ipAddress  String?
+  createdAt  DateTime @default(now()) @db.Timestamptz(3)
+
+  @@index([entityType, entityId, createdAt])
+  @@index([actorId, createdAt])
+  @@index([action, createdAt])
+}
+
+/// Installation settings (branding, company details, service-call rules, invoice terms). Values are validated by Zod schemas in `shared/`.
+model Setting {
+  key         String   @id
+  value       Json
+  updatedById String?  @db.Uuid
+  updatedBy   User?    @relation(fields: [updatedById], references: [id], onDelete: SetNull)
+  updatedAt   DateTime @updatedAt @db.Timestamptz(3)
+}

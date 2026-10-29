@@ -9,6 +9,9 @@ dist
 # Node
 node_modules
 
+# Prisma client (generated on postinstall)
+server/generated
+
 # Logs
 logs
 *.log

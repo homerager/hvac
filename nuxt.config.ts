@@ -16,7 +16,13 @@ export default defineNuxtConfig({
   typescript: {
     strict: true,
     nodeTsConfig: {
-      include: ['../tests/unit/**/*', '../tests/e2e/**/*', '../playwright.config.ts'],
+      include: [
+        '../tests/unit/**/*',
+        '../tests/e2e/**/*',
+        '../playwright.config.ts',
+        '../prisma.config.ts',
+        '../prisma/**/*.ts',
+      ],
     },
   },
 
