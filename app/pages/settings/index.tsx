@@ -48,6 +48,7 @@ export default defineComponent({
     const logoStatus = ref<'idle' | 'saving' | 'saved'>('idle')
     const logoMessage = ref('')
     const savedSnapshot = ref(currentSnapshot())
+    const logoInput = ref<HTMLInputElement | null>(null)
 
     const dirty = computed(() => currentSnapshot() !== savedSnapshot.value)
     const themes = brandThemeChoices()
@@ -177,182 +178,225 @@ export default defineComponent({
         )
       }
 
+      const previewName = displayName.value.trim() || branding.value.company.displayName
       const previewLines = companyDetailLines({
         legalName: legalName.value.trim() || null,
-        displayName: displayName.value.trim() || branding.value.company.displayName,
+        displayName: previewName,
         phone: phone.value.trim() || null,
         email: email.value.trim() || null,
         address: address.value.trim() || null,
         licenseNumbers: licensesFromText(licenses.value),
       })
+      const selectedTheme = themes.find(choice => choice.id === theme.value) ?? themes[0]
+      const logoBusy = logoStatus.value === 'saving'
+      const logoStatusText = logoStatus.value === 'saving'
+        ? 'Saving logo…'
+        : logoStatus.value === 'saved'
+          ? logoMessage.value
+          : logoError.value
 
       return (
         <UContainer class="py-8">
-          <div class="mx-auto flex max-w-2xl flex-col gap-8">
-            <div class="space-y-3">
-              <h1 class="text-2xl font-semibold text-highlighted">Company settings</h1>
-              <p class="text-sm text-muted">
-                The name, logo, and color theme are used across the app. The address, phone, email, and license numbers appear in the footer and on invoices.
-              </p>
-              <CompanyMark name={displayName.value.trim()} />
-              {previewLines.length
-                ? (
-                    <div class="text-sm text-muted space-y-1" data-testid="settings-preview">
-                      {previewLines.map((line, index) => <p key={`${index}:${line}`}>{line}</p>)}
-                    </div>
-                  )
-                : null}
-            </div>
+          <div class="mx-auto grid max-w-5xl items-start gap-8 md:grid-cols-[minmax(0,1fr)_18rem]">
+            <div class="space-y-6">
+              <div class="space-y-2">
+                <h1 class="text-2xl font-semibold tracking-tight text-highlighted">Company settings</h1>
+                <p class="max-w-2xl text-sm text-muted">
+                  The name, logo, and color theme are used across the app. The address, phone, email, and license numbers appear in the footer and on invoices.
+                </p>
+              </div>
 
-            <section class="space-y-4">
-              <h2 class="text-lg font-semibold text-highlighted">Logo</h2>
-              <label class="flex flex-col gap-2 text-sm">
-                Image file
-                <input
-                  type="file"
-                  accept="image/png,image/jpeg,image/webp"
-                  class="block w-full text-sm file:mr-3 file:rounded-md file:border-0 file:bg-elevated file:px-3 file:py-2 file:text-sm"
-                  data-testid="logo-input"
-                  disabled={logoStatus.value === 'saving'}
-                  onChange={onLogo}
-                />
-              </label>
-              <p class="text-sm text-muted">PNG, JPEG, or WebP. 1 MB maximum.</p>
-              {branding.value.logoUrl
-                ? (
-                    <UButton
-                      type="button"
-                      color="neutral"
-                      variant="ghost"
-                      disabled={logoStatus.value === 'saving'}
-                      onClick={removeLogo}
-                    >
-                      Remove logo
+              <section class="space-y-4 rounded-xl border border-default bg-default p-5">
+                <div class="space-y-1">
+                  <h2 class="text-base font-semibold text-highlighted">Logo</h2>
+                  <p class="text-sm text-muted">PNG, JPEG, or WebP. 1 MB maximum.</p>
+                </div>
+                <div class="flex flex-col gap-4 sm:flex-row sm:items-center">
+                  <div class="flex h-24 w-full items-center justify-center rounded-lg border border-dashed border-default bg-elevated px-4 sm:w-44">
+                    {branding.value.logoUrl
+                      ? <img src={branding.value.logoUrl} alt="" class="max-h-16 max-w-full object-contain" />
+                      : <span class="text-sm text-muted">No logo</span>}
+                  </div>
+                  <div class="flex flex-wrap items-center gap-2">
+                    <input
+                      ref={logoInput}
+                      id="company-logo"
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp"
+                      aria-label="Image file"
+                      class="sr-only"
+                      data-testid="logo-input"
+                      disabled={logoBusy}
+                      onChange={onLogo}
+                    />
+                    <UButton type="button" color="neutral" variant="outline" disabled={logoBusy} onClick={() => logoInput.value?.click()}>
+                      {branding.value.logoUrl ? 'Replace logo' : 'Upload logo'}
                     </UButton>
-                  )
-                : null}
-              <p
-                aria-live="polite"
-                role={logoError.value ? 'alert' : undefined}
-                class={logoError.value ? 'text-sm text-error' : 'text-sm text-muted'}
-                data-testid="logo-status"
-              >
-                {logoStatus.value === 'saving' ? 'Saving logo…' : logoStatus.value === 'saved' ? logoMessage.value : logoError.value}
-              </p>
-            </section>
+                    {branding.value.logoUrl
+                      ? (
+                          <UButton type="button" color="neutral" variant="ghost" disabled={logoBusy} onClick={removeLogo}>
+                            Remove logo
+                          </UButton>
+                        )
+                      : null}
+                  </div>
+                </div>
+                {logoStatusText
+                  ? (
+                      <p
+                        aria-live="polite"
+                        role={logoError.value ? 'alert' : undefined}
+                        class={logoError.value ? 'text-sm text-error' : 'text-sm text-muted'}
+                        data-testid="logo-status"
+                      >
+                        {logoStatusText}
+                      </p>
+                    )
+                  : null}
+              </section>
 
-            <form class="space-y-4" data-testid="company-settings-form" onSubmit={save}>
-              <h2 class="text-lg font-semibold text-highlighted">Company details</h2>
-              <UFormField label="Display name" required error={errors.value.displayName} description="Shown in the header.">
-                <UInput
-                  modelValue={displayName.value}
-                  required
-                  autocomplete="organization"
-                  onUpdate:modelValue={(value: string) => {
-                    displayName.value = value
-                    markEdited()
-                  }}
-                />
-              </UFormField>
-              <UFormField label="Legal name" error={errors.value.legalName} description="Registered name shown on invoices.">
-                <UInput
-                  modelValue={legalName.value}
-                  autocomplete="organization"
-                  onUpdate:modelValue={(value: string) => {
-                    legalName.value = value
-                    markEdited()
-                  }}
-                />
-              </UFormField>
-              <UFormField label="Phone" error={errors.value.phone}>
-                <UInput
-                  modelValue={phone.value}
-                  type="tel"
-                  autocomplete="tel"
-                  onUpdate:modelValue={(value: string) => {
-                    phone.value = value
-                    markEdited()
-                  }}
-                />
-              </UFormField>
-              <UFormField label="Email" error={errors.value.email}>
-                <UInput
-                  modelValue={email.value}
-                  type="email"
-                  autocomplete="email"
-                  onUpdate:modelValue={(value: string) => {
-                    email.value = value
-                    markEdited()
-                  }}
-                />
-              </UFormField>
-              <UFormField label="Address" error={errors.value.address}>
-                <UTextarea
-                  modelValue={address.value}
-                  rows={4}
-                  autocomplete="street-address"
-                  onUpdate:modelValue={(value: string) => {
-                    address.value = value
-                    markEdited()
-                  }}
-                />
-              </UFormField>
-              <UFormField label="License numbers" error={errors.value.licenseNumbers} description="One number per line.">
-                <UTextarea
-                  modelValue={licenses.value}
-                  rows={3}
-                  onUpdate:modelValue={(value: string) => {
-                    licenses.value = value
-                    markEdited()
-                  }}
-                />
-              </UFormField>
-
-              <fieldset class="space-y-2">
-                <legend class="text-sm font-medium">Color theme</legend>
-                <p class="text-sm text-muted">Choose one of the standard themes. It is applied across the app after you save.</p>
-                <div role="radiogroup" aria-label="Color theme" class="grid grid-cols-2 gap-2 sm:grid-cols-3">
-                  {themes.map(choice => (
-                    <button
-                      key={choice.id}
-                      type="button"
-                      role="radio"
-                      aria-checked={theme.value === choice.id}
-                      data-testid={`theme-${choice.id}`}
-                      class={theme.value === choice.id
-                        ? 'flex items-center gap-2 rounded-md bg-elevated px-3 py-2 text-sm ring-2 ring-highlighted'
-                        : 'flex items-center gap-2 rounded-md px-3 py-2 text-sm ring-1 ring-default'}
-                      onClick={() => {
-                        theme.value = choice.id
+              <form class="space-y-6 rounded-xl border border-default bg-default p-5" data-testid="company-settings-form" onSubmit={save}>
+                <h2 class="text-base font-semibold text-highlighted">Company details</h2>
+                <div class="grid gap-4 sm:grid-cols-2">
+                  <UFormField class="w-full" label="Display name" required error={errors.value.displayName} description="Shown in the header.">
+                    <UInput
+                      class="w-full"
+                      modelValue={displayName.value}
+                      required
+                      autocomplete="organization"
+                      onUpdate:modelValue={(value: string) => {
+                        displayName.value = value
                         markEdited()
                       }}
-                    >
-                      <span class="size-4 shrink-0 rounded-full" style={{ backgroundColor: choice.swatch }} />
-                      {choice.label}
-                    </button>
-                  ))}
+                    />
+                  </UFormField>
+                  <UFormField class="w-full" label="Legal name" error={errors.value.legalName} description="Registered name shown on invoices.">
+                    <UInput
+                      class="w-full"
+                      modelValue={legalName.value}
+                      autocomplete="organization"
+                      onUpdate:modelValue={(value: string) => {
+                        legalName.value = value
+                        markEdited()
+                      }}
+                    />
+                  </UFormField>
+                  <UFormField class="w-full" label="Phone" error={errors.value.phone}>
+                    <UInput
+                      class="w-full"
+                      modelValue={phone.value}
+                      type="tel"
+                      autocomplete="tel"
+                      onUpdate:modelValue={(value: string) => {
+                        phone.value = value
+                        markEdited()
+                      }}
+                    />
+                  </UFormField>
+                  <UFormField class="w-full" label="Email" error={errors.value.email}>
+                    <UInput
+                      class="w-full"
+                      modelValue={email.value}
+                      type="email"
+                      autocomplete="email"
+                      onUpdate:modelValue={(value: string) => {
+                        email.value = value
+                        markEdited()
+                      }}
+                    />
+                  </UFormField>
                 </div>
-                {errors.value.theme ? <p class="text-sm text-error">{errors.value.theme}</p> : null}
-              </fieldset>
+                <UFormField class="w-full" label="Address" error={errors.value.address}>
+                  <UTextarea
+                    class="w-full"
+                    modelValue={address.value}
+                    rows={3}
+                    autocomplete="street-address"
+                    onUpdate:modelValue={(value: string) => {
+                      address.value = value
+                      markEdited()
+                    }}
+                  />
+                </UFormField>
+                <UFormField class="w-full" label="License numbers" error={errors.value.licenseNumbers} description="One number per line.">
+                  <UTextarea
+                    class="w-full"
+                    modelValue={licenses.value}
+                    rows={3}
+                    onUpdate:modelValue={(value: string) => {
+                      licenses.value = value
+                      markEdited()
+                    }}
+                  />
+                </UFormField>
 
-              <p aria-live="polite" role={formError.value ? 'alert' : undefined} class="text-sm" data-testid="settings-status">
-                <span class={formError.value ? 'text-error' : 'text-muted'}>
-                  {formStatus.value === 'saving' ? 'Saving…' : formStatus.value === 'saved' ? 'Saved.' : formError.value}
-                </span>
-              </p>
-              <div class="flex flex-wrap gap-2">
-                <UButton type="submit" loading={formStatus.value === 'saving'}>
-                  Save company settings
-                </UButton>
-                {dirty.value
+                <fieldset class="space-y-3">
+                  <legend class="text-base font-semibold text-highlighted">Color theme</legend>
+                  <p class="text-sm text-muted">Choose one of the standard themes. It is applied across the app after you save.</p>
+                  <div role="radiogroup" aria-label="Color theme" class="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                    {themes.map(choice => (
+                      <button
+                        key={choice.id}
+                        type="button"
+                        role="radio"
+                        aria-checked={theme.value === choice.id}
+                        data-testid={`theme-${choice.id}`}
+                        class={theme.value === choice.id
+                          ? 'flex items-center gap-3 rounded-lg border border-primary bg-primary/10 px-3 py-2.5 text-left text-sm font-medium ring-2 ring-primary'
+                          : 'flex items-center gap-3 rounded-lg border border-default px-3 py-2.5 text-left text-sm hover:bg-elevated'}
+                        onClick={() => {
+                          theme.value = choice.id
+                          markEdited()
+                        }}
+                      >
+                        <span class="size-8 shrink-0 rounded-md" style={{ backgroundColor: choice.swatch }} />
+                        {choice.label}
+                      </button>
+                    ))}
+                  </div>
+                  {errors.value.theme ? <p class="text-sm text-error">{errors.value.theme}</p> : null}
+                </fieldset>
+
+                <div class="flex flex-wrap items-center gap-3 border-t border-default pt-4">
+                  <UButton type="submit" loading={formStatus.value === 'saving'}>
+                    Save changes
+                  </UButton>
+                  {dirty.value
+                    ? (
+                        <UButton type="button" color="neutral" variant="ghost" disabled={formStatus.value === 'saving'} onClick={discard}>
+                          Discard changes
+                        </UButton>
+                      )
+                    : null}
+                  <p aria-live="polite" role={formError.value ? 'alert' : undefined} class="text-sm" data-testid="settings-status">
+                    <span class={formError.value ? 'text-error' : 'text-muted'}>
+                      {formStatus.value === 'saving' ? 'Saving…' : formStatus.value === 'saved' ? 'Saved.' : formError.value}
+                    </span>
+                  </p>
+                </div>
+              </form>
+            </div>
+
+            <aside class="md:sticky md:top-6">
+              <div class="overflow-hidden rounded-xl border border-default bg-default" data-testid="settings-preview">
+                <div class="border-b border-default bg-elevated px-4 py-3">
+                  <CompanyMark name={previewName} />
+                </div>
+                <div class="space-y-3 px-4 py-4">
+                  <span class="inline-flex h-8 items-center rounded-md px-3 text-sm font-medium text-white" style={{ backgroundColor: selectedTheme?.swatch }}>
+                    {selectedTheme?.label}
+                  </span>
+                  <p class="text-xs text-muted">Applied across the app after you save.</p>
+                </div>
+                {previewLines.length
                   ? (
-                      <UButton type="button" color="neutral" variant="ghost" disabled={formStatus.value === 'saving'} onClick={discard}>
-                        Discard changes
-                      </UButton>
+                      <div class="space-y-1 border-t border-default px-4 py-3 text-sm text-muted">
+                        {previewLines.map((line, index) => <p key={`${index}:${line}`}>{line}</p>)}
+                      </div>
                     )
                   : null}
               </div>
-            </form>
+            </aside>
           </div>
         </UContainer>
       )
