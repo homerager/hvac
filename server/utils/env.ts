@@ -3,6 +3,8 @@ import { z } from 'zod'
 const serverEnvSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   DATABASE_URL: z.url({ protocol: /^postgres(ql)?$/ }),
+  // Seals the session cookie (nuxt-auth-utils). Required in every environment.
+  NUXT_SESSION_PASSWORD: z.string().min(32),
 })
 
 export type ServerEnv = z.infer<typeof serverEnvSchema>

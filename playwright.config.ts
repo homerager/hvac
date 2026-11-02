@@ -26,6 +26,7 @@ export default defineConfig({
     env: {
       PORT: String(port),
       DATABASE_URL: process.env.DATABASE_URL ?? 'postgresql://hvac:hvac@localhost:5432/hvac',
+      NUXT_SESSION_PASSWORD: process.env.NUXT_SESSION_PASSWORD ?? 'e2e-only-session-password-32-characters',
     },
   },
 })

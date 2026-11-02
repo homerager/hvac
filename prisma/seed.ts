@@ -2,6 +2,8 @@ import { existsSync } from 'node:fs'
 import { PrismaPg } from '@prisma/adapter-pg'
 import { PrismaClient } from '../server/generated/prisma/client'
 import type { Prisma } from '../server/generated/prisma/client'
+import { hashPassword } from '../server/services/password'
+import { normalizeEmail } from '../shared/utils/email'
 
 // Safe to re-run: every write is an upsert keyed on a unique field, and existing rows are never overwritten
 // (settings edited by the client stay as they are).
@@ -69,6 +71,8 @@ async function seedSettings() {
   }
 }
 
+const DEMO_PASSWORD = 'ServoraDemo!'
+
 async function seedUsers() {
   const users = [
     { email: 'superadmin@example.com', name: 'Super Admin', role: 'SUPER_ADMIN' },
@@ -80,8 +84,17 @@ async function seedUsers() {
 
   const byEmail: Record<string, string> = {}
   for (const user of users) {
-    const row = await prisma.user.upsert({ where: { email: user.email }, create: user, update: {} })
-    byEmail[user.email] = row.id
+    const email = normalizeEmail(user.email)
+    const passwordHash = await hashPassword(DEMO_PASSWORD)
+    const row = await prisma.user.upsert({
+      where: { email },
+      create: { ...user, email, passwordHash },
+      update: {},
+    })
+    if (!row.passwordHash) {
+      await prisma.user.update({ where: { id: row.id }, data: { passwordHash } })
+    }
+    byEmail[email] = row.id
   }
   return byEmail
 }

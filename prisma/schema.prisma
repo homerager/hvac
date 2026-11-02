@@ -158,6 +158,16 @@ model User {
   updatedSettings    Setting[]
 }
 
+/// Sliding window of sign-in attempts. No user relation: unknown emails are limited too.
+model LoginAttempt {
+  id          String   @id @default(uuid(7)) @db.Uuid
+  /// `email:` plus the normalized address, or `ip:` plus the client address.
+  key         String
+  attemptedAt DateTime @default(now()) @db.Timestamptz(3)
+
+  @@index([key, attemptedAt])
+}
+
 // ─────────────────────── Customers & sites ───────────────────────
 
 model Customer {

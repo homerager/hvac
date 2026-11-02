@@ -19,7 +19,7 @@ npm run db:seed        # settings + demo data (idempotent, safe to re-run)
 npm run dev            # http://localhost:3000
 ```
 
-The server validates its environment at startup (`server/utils/env.ts`) and refuses to start with a missing or invalid `DATABASE_URL`.
+The server validates its environment at startup (`server/utils/env.ts`) and refuses to start with a missing or invalid `DATABASE_URL` or `NUXT_SESSION_PASSWORD` (32+ characters; it seals the session cookie).
 
 ## Scripts
 
@@ -49,6 +49,15 @@ Components, pages and layouts are written in TSX (`defineComponent` + render fun
 - Idempotency is enforced by unique keys: `Request.idempotencyKey`, `Job.requestId`, `Invoice.jobId`, `Payment.stripePaymentIntentId`, `StripeEvent.id`, `WorkEntry.clientId`.
 - Finalized invoices are not edited; corrections are appended as `InvoiceAdjustment` rows.
 - CHECK constraints that Prisma can't express (e.g. a `CHECK` payment requires a photo) are hand-written at the end of the migration SQL. Run `prisma migrate dev --create-only` when a change needs one.
+
+### Auth and audit
+
+Sessions are sealed cookies (`nuxt-auth-utils`). Demo users share the password `ServoraDemo!` (set on seed when `passwordHash` is empty). Roles are `SUPER_ADMIN`, `OWNER`, `DISPATCHER`, and `TECHNICIAN`.
+
+- Sign-in: `POST /api/auth/login`. The session id is rotated on each successful sign-in. The cookie is refreshed from the database on each API call, so a deactivated user or a role change takes effect immediately. Sign-in is limited to 5 attempts per email and 10 per IP in 15 minutes (`LoginAttempt`); the limit is the socket address, not `X-Forwarded-For`.
+- Every `/api` route except health, login, logout, and the session endpoints requires an active user. Handlers call `requirePermission` (`server/utils/rbac.ts`); the matrix lives in `shared/utils/rbac.ts`. Technicians only see jobs assigned to them or explicitly shared.
+- Page routes opt in with the `auth` route middleware. The API is the enforcement point.
+- Writes to users, invoices, invoice lines, adjustments, payments, work entries, work-entry lines, and settings append an `AuditLog` row via a Prisma Client extension (`server/services/audit-log.ts`). Password hashes are stored as `[redacted]`. A login that only updates the timestamp is not logged. A password rehash on login is logged. `withAudit({ actorId, action, reason })` stamps the rows and can replace the automatic `user.update` action (for example `user.role_change`). The audit insert runs on the same client as the write, so it commits or rolls back with an interactive `$transaction`. `GET /api/audit-logs` requires `audit.read` (owner and super admin).
 
 ## Layout
 

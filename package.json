@@ -30,6 +30,7 @@
     "@prisma/adapter-pg": "^7.10.1",
     "@prisma/client": "^7.10.1",
     "nuxt": "^4.6.3",
+    "nuxt-auth-utils": "^0.5.34",
     "pg": "^8.23.1",
     "pinia": "^4.1.0",
     "tailwindcss": "^4.3.3",
