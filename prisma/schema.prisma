@@ -638,7 +638,9 @@ model AuditLog {
   @@index([action, createdAt])
 }
 
-/// Installation settings (branding, company details, service-call rules, invoice terms). Values are validated by Zod schemas in `shared/`.
+/// Installation settings (branding, company details, service-call rules, invoice terms).
+/// `client-decisions` stores the nine open client decisions and any requirements sign-off.
+/// Values are validated by Zod schemas in `shared/`.
 model Setting {
   key         String   @id
   value       Json

@@ -23,6 +23,9 @@ describe('apiAuthMode', () => {
     expect(apiAuthMode('/api/settings/company', 'PUT')).toBe('required')
     expect(apiAuthMode('/api/settings/logo', 'POST')).toBe('required')
     expect(apiAuthMode('/api/settings/logo', 'DELETE')).toBe('required')
+    expect(apiAuthMode('/api/settings/decisions')).toBe('required')
+    expect(apiAuthMode('/api/settings/decisions/invoice-approval', 'PUT')).toBe('required')
+    expect(apiAuthMode('/api/settings/decisions/sign-off', 'POST')).toBe('required')
   })
 
   it('lets anyone read company branding and keeps changes signed in', () => {

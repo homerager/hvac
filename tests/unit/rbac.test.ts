@@ -43,6 +43,9 @@ describe('rbac', () => {
     expect(hasPermission('TECHNICIAN', 'jobs.read.all')).toBe(false)
     expect(hasPermission('TECHNICIAN', 'audit.read')).toBe(false)
     expect(hasPermission('OWNER', 'settings.manage')).toBe(false)
+    expect(hasPermission('OWNER', 'decisions.manage')).toBe(true)
+    expect(hasPermission('DISPATCHER', 'decisions.manage')).toBe(false)
+    expect(hasPermission('TECHNICIAN', 'decisions.manage')).toBe(false)
   })
 
   it('limits technicians to assigned or shared jobs', () => {

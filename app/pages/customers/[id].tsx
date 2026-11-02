@@ -22,6 +22,7 @@ import {
 } from '../../../shared/utils/customers'
 import { hasPermission, isRole } from '../../../shared/utils/rbac'
 import { useBranding } from '../../composables/branding'
+import { checkboxHint, fieldHint } from '../../components/field-hint'
 import { apiErrorFields, apiErrorMessage, apiFetch } from '../../utils/api'
 
 const sectionCard = 'space-y-5 rounded-xl border border-default bg-default p-5'
@@ -513,7 +514,7 @@ export default defineComponent({
                     }}
                   />
                 </UFormField>
-                <UFormField class="w-full" label="Billing contact" error={customerErrors.value.billingContactId} description="Used unless a property names someone else.">
+                <UFormField class="w-full" error={customerErrors.value.billingContactId} v-slots={fieldHint('Billing contact', 'Used unless a property names someone else.')}>
                   <USelect
                     class="w-full"
                     placeholder="No billing contact"
@@ -541,8 +542,7 @@ export default defineComponent({
               />
               {customerErrors.value.type ? <p class="text-sm text-error">{customerErrors.value.type}</p> : null}
               <UCheckbox
-                label="Contract customer"
-                description="Can be exempt from the service-call charge once that rule is set."
+                v-slots={checkboxHint('Contract customer', 'Can be exempt from the service-call charge once that rule is set.')}
                 modelValue={isContract.value}
                 disabled={savingCustomer}
                 onUpdate:modelValue={(value: boolean | 'indeterminate') => {
@@ -795,7 +795,7 @@ export default defineComponent({
             onUpdate:modelValue={(value: ServiceState) => patchProperty({ state: value })}
           />
           {propertyErrors.value.state ? <p class="text-sm text-error">{propertyErrors.value.state}</p> : null}
-          <UFormField class="w-full" label="Tax jurisdiction" error={propertyErrors.value.taxJurisdiction} description="County or city. Tax for work at this address comes from this property.">
+          <UFormField class="w-full" error={propertyErrors.value.taxJurisdiction} v-slots={fieldHint('Tax jurisdiction', 'County or city. Tax for work at this address comes from this property.')}>
             <UInput class="w-full" modelValue={draft.taxJurisdiction} disabled={saving} onUpdate:modelValue={(value: string) => patchProperty({ taxJurisdiction: value })} />
           </UFormField>
           <UCheckbox
@@ -817,7 +817,7 @@ export default defineComponent({
                 onUpdate:modelValue={(value: string) => patchProperty({ siteContactId: storedContact(value) })}
               />
             </UFormField>
-            <UFormField class="w-full" label="Billing contact for this property" error={propertyErrors.value.billingContactId} description="Leave this empty to use the customer billing contact.">
+            <UFormField class="w-full" error={propertyErrors.value.billingContactId} v-slots={fieldHint('Billing contact for this property', 'Leave this empty to use the customer billing contact.')}>
               <USelect
                 class="w-full"
                 placeholder="Use the customer billing contact"

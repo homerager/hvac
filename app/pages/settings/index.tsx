@@ -1,4 +1,4 @@
-import { UButton, UContainer, UFormField, UInput, UTextarea } from '#components'
+import { NuxtLink, UButton, UContainer, UFormField, UInput, UTextarea } from '#components'
 import {
   brandThemeChoices,
   companyDetailLines,
@@ -12,6 +12,7 @@ import {
 } from '../../../shared/utils/branding'
 import { hasPermission, isRole } from '../../../shared/utils/rbac'
 import CompanyMark from '../../components/company-mark'
+import { fieldHint } from '../../components/field-hint'
 import { applyBrandTheme, useBranding } from '../../composables/branding'
 import { apiFetch } from '../../utils/api'
 
@@ -204,6 +205,9 @@ export default defineComponent({
                 <p class="max-w-2xl text-sm text-muted">
                   The name, logo, and color theme are used across the app. The address, phone, email, and license numbers appear in the footer and on invoices.
                 </p>
+                <NuxtLink to="/settings/decisions" class="text-sm underline" data-testid="decisions-link">
+                  Client decisions and requirements sign-off
+                </NuxtLink>
               </div>
 
               <section class="space-y-4 rounded-xl border border-default bg-default p-5">
@@ -258,7 +262,7 @@ export default defineComponent({
               <form class="space-y-6 rounded-xl border border-default bg-default p-5" data-testid="company-settings-form" onSubmit={save}>
                 <h2 class="text-base font-semibold text-highlighted">Company details</h2>
                 <div class="grid gap-4 sm:grid-cols-2">
-                  <UFormField class="w-full" label="Display name" required error={errors.value.displayName} description="Shown in the header.">
+                  <UFormField class="w-full" error={errors.value.displayName} v-slots={fieldHint('Display name', 'Shown in the header.', true)}>
                     <UInput
                       class="w-full"
                       modelValue={displayName.value}
@@ -270,7 +274,7 @@ export default defineComponent({
                       }}
                     />
                   </UFormField>
-                  <UFormField class="w-full" label="Legal name" error={errors.value.legalName} description="Registered name shown on invoices.">
+                  <UFormField class="w-full" error={errors.value.legalName} v-slots={fieldHint('Legal name', 'Registered name shown on invoices.')}>
                     <UInput
                       class="w-full"
                       modelValue={legalName.value}
@@ -318,7 +322,7 @@ export default defineComponent({
                     }}
                   />
                 </UFormField>
-                <UFormField class="w-full" label="License numbers" error={errors.value.licenseNumbers} description="One number per line.">
+                <UFormField class="w-full" error={errors.value.licenseNumbers} v-slots={fieldHint('License numbers', 'One number per line.')}>
                   <UTextarea
                     class="w-full"
                     modelValue={licenses.value}

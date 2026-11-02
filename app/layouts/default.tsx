@@ -20,6 +20,7 @@ export default defineComponent({
       const role = current && isRole(current.role) ? current.role : null
       const roleLabel = role ? ROLE_LABELS[role] : ''
       const canManageCustomers = role ? hasPermission(role, 'customers.manage') : false
+      const canManageDecisions = role ? hasPermission(role, 'decisions.manage') : false
       const canManageSettings = role ? hasPermission(role, 'settings.manage') : false
       const detailLines = companyDetailLines(branding.value.company)
       return (
@@ -39,6 +40,13 @@ export default defineComponent({
                           ? (
                               <NuxtLink to="/customers" class="text-sm text-muted" data-testid="customers-nav">
                                 Customers
+                              </NuxtLink>
+                            )
+                          : null}
+                        {canManageDecisions
+                          ? (
+                              <NuxtLink to="/settings/decisions" class="text-sm text-muted" data-testid="decisions-nav">
+                                Decisions
                               </NuxtLink>
                             )
                           : null}

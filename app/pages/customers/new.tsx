@@ -13,6 +13,7 @@ import {
 } from '../../../shared/utils/customers'
 import { hasPermission, isRole } from '../../../shared/utils/rbac'
 import { useBranding } from '../../composables/branding'
+import { checkboxHint, fieldHint } from '../../components/field-hint'
 import { apiErrorFields, apiErrorMessage, apiFetch } from '../../utils/api'
 
 const sectionCard = 'space-y-5 rounded-xl border border-default bg-default p-5'
@@ -187,8 +188,7 @@ export default defineComponent({
               />
               {errors.value.type ? <p class="text-sm text-error">{errors.value.type}</p> : null}
               <UCheckbox
-                label="Contract customer"
-                description="Can be exempt from the service-call charge once that rule is set."
+                v-slots={checkboxHint('Contract customer', 'Can be exempt from the service-call charge once that rule is set.')}
                 modelValue={isContract.value}
                 disabled={saving}
                 onUpdate:modelValue={(value: boolean | 'indeterminate') => {
@@ -291,7 +291,7 @@ export default defineComponent({
                   The state and jurisdiction are the tax context for work at this address. The billing contact above is also the site contact until you change it.
                 </p>
               </div>
-              <UFormField class="w-full" label="Property name" error={errors.value['property.name']} description="Optional. For example, Hudson Plaza — Manhattan.">
+              <UFormField class="w-full" error={errors.value['property.name']} v-slots={fieldHint('Property name', 'Optional. For example, Hudson Plaza — Manhattan.')}>
                 <UInput
                   class="w-full"
                   modelValue={propertyName.value}
@@ -364,7 +364,7 @@ export default defineComponent({
                 }}
               />
               {errors.value['property.state'] ? <p class="text-sm text-error">{errors.value['property.state']}</p> : null}
-              <UFormField class="w-full" label="Tax jurisdiction" error={errors.value['property.taxJurisdiction']} description="County or city, once the accountant confirms the rule.">
+              <UFormField class="w-full" error={errors.value['property.taxJurisdiction']} v-slots={fieldHint('Tax jurisdiction', 'County or city, once the accountant confirms the rule.')}>
                 <UInput
                   class="w-full"
                   modelValue={taxJurisdiction.value}

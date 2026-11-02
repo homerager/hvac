@@ -1,9 +1,9 @@
 // Server-enforced access for BR-15. The API never trusts the role stored in the session cookie.
 //
-// SUPER_ADMIN is on every permission: exact recovery rights are still an open client decision,
-// and this matrix is the only place that decision has to change.
-// Payment record / confirm / void are limited to owner and super admin until the client
-// decides who may handle each payment type (open item 2).
+// The client's exact Super Admin rights and per-method payment rights are recorded in the
+// client-decisions setting. This matrix stays the enforcement point: a recorded answer does
+// not change access until that signed decision is applied here.
+// Payment record / confirm / void stay with the owner and super admin until then.
 
 export const ROLES = ['SUPER_ADMIN', 'OWNER', 'DISPATCHER', 'TECHNICIAN'] as const
 
@@ -41,6 +41,7 @@ export const PERMISSIONS = {
   'payments.confirm': ['SUPER_ADMIN', 'OWNER'],
   'payments.void': ['SUPER_ADMIN', 'OWNER'],
   'audit.read': ['SUPER_ADMIN', 'OWNER'],
+  'decisions.manage': ['SUPER_ADMIN', 'OWNER'],
 } as const satisfies Record<string, readonly Role[]>
 
 export type Permission = keyof typeof PERMISSIONS

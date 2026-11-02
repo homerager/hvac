@@ -3,6 +3,7 @@ import { PrismaPg } from '@prisma/adapter-pg'
 import { PrismaClient } from '../server/generated/prisma/client'
 import type { Prisma } from '../server/generated/prisma/client'
 import { hashPassword } from '../server/services/password'
+import { emptyDecisionRegister } from '../shared/utils/decisions'
 import { normalizeEmail } from '../shared/utils/email'
 
 // Safe to re-run: every write is an upsert keyed on a unique field, and existing rows are never overwritten
@@ -23,7 +24,7 @@ const seedDemo = process.env.SEED_DEMO
   ? process.env.SEED_DEMO === '1'
   : process.env.NODE_ENV !== 'production'
 
-// Values the client has not decided yet stay null: no discovery defaults (BR-07, open items #3-#5).
+// Undecided client values stay null. `client-decisions` starts with every answer open and no signature.
 const settings: Record<string, Prisma.InputJsonValue> = {
   'company': {
     legalName: null,
@@ -49,6 +50,7 @@ const settings: Record<string, Prisma.InputJsonValue> = {
     numberFormat: null,
     paymentTermsDays: null,
   },
+  'client-decisions': emptyDecisionRegister() as Prisma.InputJsonValue,
 }
 
 const ids = {
