@@ -17,6 +17,8 @@ describe('apiAuthMode', () => {
 
   it('requires a session for every other API route', () => {
     expect(apiAuthMode('/api/audit-logs')).toBe('required')
+    expect(apiAuthMode('/api/customers')).toBe('required')
+    expect(apiAuthMode('/api/customers/00000000-0000-7000-8000-000000000001', 'PUT')).toBe('required')
     expect(apiAuthMode('/api/jobs')).toBe('required')
     expect(apiAuthMode('/api/settings/company', 'PUT')).toBe('required')
     expect(apiAuthMode('/api/settings/logo', 'POST')).toBe('required')
