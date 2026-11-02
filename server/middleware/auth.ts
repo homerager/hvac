@@ -5,7 +5,7 @@ import { findActiveUser, sessionUserId } from '../services/auth'
 import { sessionCookie } from '../utils/session'
 
 export default defineEventHandler(async (event) => {
-  const mode = apiAuthMode(getRequestURL(event).pathname)
+  const mode = apiAuthMode(getRequestURL(event).pathname, event.method)
   if (mode === 'skip') return
 
   const session = await getUserSession(event)

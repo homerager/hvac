@@ -85,6 +85,8 @@ enum AttachmentKind {
   NAMEPLATE
   CHECK_PHOTO
   DOCUMENT
+  /// Installation logo (BR-16). Served only through the public branding route.
+  LOGO
 }
 
 enum InvoiceStatus {

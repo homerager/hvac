@@ -1,10 +1,13 @@
 import { UButton, UContainer, UInput } from '#components'
 import { LOGIN_RATE_LIMIT_MESSAGE } from '../../shared/utils/login-schema'
+import CompanyMark from '../components/company-mark'
+import { useBranding } from '../composables/branding'
 
 export default defineComponent({
   name: 'LoginPage',
   async setup() {
-    useSeoMeta({ title: 'Sign in · Servora' })
+    const branding = useBranding()
+    useSeoMeta({ title: computed(() => `Sign in · ${branding.value.company.displayName}`) })
 
     const session = useUserSession()
     const route = useRoute()
@@ -43,9 +46,9 @@ export default defineComponent({
     return () => (
       <UContainer class="py-10">
         <form class="mx-auto flex max-w-sm flex-col gap-4" data-testid="login-form" onSubmit={submit}>
-          <div class="space-y-1">
+          <div class="space-y-3">
+            <CompanyMark />
             <h1 class="text-2xl font-semibold text-highlighted">Sign in</h1>
-            <p class="text-sm text-muted">Servora HVAC</p>
           </div>
           <label class="flex flex-col gap-1 text-sm">
             Email
